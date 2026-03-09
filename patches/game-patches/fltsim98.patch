@@ -1,0 +1,68 @@
+From 1c2619f5ad4299f77612cd2aeca4272c6ae7ca10 Mon Sep 17 00:00:00 2001
+From: Matteo Hausner <775727+bwRavencl@users.noreply.github.com>
+Date: Fri, 2 Jan 2026 15:49:08 -0300
+Subject: [PATCH 1/1] Skip exception swallowing in dispatch_user_callback for FLTSIM98.EXE
+
+Originally authored by MrPowerGamerBR <git@mrpowergamerbr.com>.
+
+Fixes issues with Microsoft Flight Simulator 98 by not swallowing
+exceptions in dispatch_user_callback when running under FLTSIM98.EXE.
+The workaround is guarded by a process-name check so that all other
+applications keep the original exception-handling behaviour.
+---
+ dlls/ntdll/exception.c | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ntdll/exception.c b/dlls/ntdll/exception.c
+index ab8d8c0bd05..5302c6a4161 100644
+--- a/dlls/ntdll/exception.c
++++ b/dlls/ntdll/exception.c
+@@ -307,17 +307,41 @@ NTSTATUS WINAPI dispatch_user_callback( void *args, ULONG len, ULONG id )
+ {
+     NTSTATUS status;
+ 
+-    __TRY
++    /* FLTSIM98 workaround: the game is incompatible with Wine swallowing
++     * exceptions inside dispatch_user_callback.  Skip the try/except block
++     * when the current process image is FLTSIM98.EXE so that the exception
++     * propagates normally.  All other processes keep the original behaviour.
++     * The result is cached in a static variable so the string comparison is
++     * only performed once across all calls. */
++    static const WCHAR fltsim98W[] = {'F','L','T','S','I','M','9','8','.','E','X','E',0};
++    static int is_fltsim98 = -1;  /* -1 = not yet initialised */
++    if (is_fltsim98 < 0)
++    {
++        UNICODE_STRING *image_name = &NtCurrentTeb()->Peb->ProcessParameters->ImagePathName;
++        const WCHAR *base = image_name->Buffer + image_name->Length / sizeof(WCHAR);
++        while (base > image_name->Buffer && base[-1] != '\\' && base[-1] != '/') base--;
++        is_fltsim98 = (wcsicmp( base, fltsim98W ) == 0);
++    }
++
++    if (is_fltsim98)
+     {
+         KERNEL_CALLBACK_PROC func = NtCurrentTeb()->Peb->KernelCallbackTable[id];
+         status = func( args, len );
+     }
+-    __EXCEPT_ALL
++    else
+     {
+-        status = GetExceptionCode();
+-        ERR( "ignoring exception %lx\n", status );
++        __TRY
++        {
++            KERNEL_CALLBACK_PROC func = NtCurrentTeb()->Peb->KernelCallbackTable[id];
++            status = func( args, len );
++        }
++        __EXCEPT_ALL
++        {
++            status = GetExceptionCode();
++            ERR( "ignoring exception %lx\n", status );
++        }
++        __ENDTRY
+     }
+-    __ENDTRY
+     return status;
+ }
+
+-- 
+2.52.0

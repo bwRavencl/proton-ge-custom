@@ -242,6 +242,10 @@ apply_all_in_dir() {
     echo "WINE: -GAME FIXES- add Vermintide 2 fix"
     apply_patch "../patches/game-patches/0001-HACK-Force-Vermintide-2-current-working-directory-to.patch"
 
+    # https://bugs.winehq.org/show_bug.cgi?id=59205
+    echo "WINE: -GAME FIXES- add flight simulator 98 fix"
+    apply_patch "../patches/game-patches/fltsim98.patch"
+
 ### END GAME PATCH SECTION ###
 
 ### (2-5) WINE HOTFIX/BACKPORT SECTION ###
